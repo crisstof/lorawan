@@ -1,0 +1,374 @@
+Trames du Payload
+-----------------
+
+----------------------------------------------------------------------------------------
+|   1 octet	|   1 octet	 | N octets    | N octets | N octets    | N octets | ...
+----------------------------------------------------------------------------------------
+|Format/version	| Data Channel n | Data Type X | données  | Data Type Y | données  |
+----------------------------------------------------------------------------------------
+Nœud : Organe de collecte et de transmission des données capteurs,
+       un nœud peut être connecté à plusieurs capteurs.
+
+Data Channel :Source de données, [ un capteur physique ou le nœud].
+	      Mais ce n’est pas une obligation non plus, un unique capteur physique 
+	      pourrait être la source de deux, ou plus, Data Channel 
+	      si cette configuration à un sens pour votre application. 
+	      Les Data Channel sont identifiés par un numéro positif et le numéro 0 
+	      est réservé pour le nœud.
+
+Data Type : Est un identifiant de type de données. La liste des identifiants est, mais elle peut être 		    allongée pour y ajouter des types de données non encore identifiés. 
+	    Permet de savoir si les données qui suivent représentent une température, une position 	    	    géographique, une pression, … . 
+	    Il permet également de connaître la taille des données qui le suivent.
+
+
+Champ de format/version : codé sur un octet différente de 0x00.
+------------------------
+---------------------------------
+| 7 | 6 | 5 | 4 | 3 | 2 | 1 | 0 | 
+---------------------------------
+|  Format   |   Version         |
+---------------------------------
+| 0x06      |    0x01	        | 
+|(0b110     |		        |
+---------------------------------
+
+champ Data Channel: codé sur un octet
+------------------- identifie une source de données et de savoir combien de couples (Data Type, données) 
+		     suivront.
+
+---------------------------------------------
+| 7 		| 6 | 5 | 4 | 3 | 2 | 1 | 0 | 
+---------------------------------------------
+|  ClearGlobal  | DataChannelId |  NbData   |
+---------------------------------------------
+DataChannelId identifie la source de données sur 4 bits donc 16 identifiants le 0 réservé pour le noeud,
+	      donc identifie 15 capteurs
+NbData: indique le nombre de couples (Data Type, donnéesà à suivre) codé sur 3 bits donc 7 couples et
+        le 0 réservée à usage futurs.
+ClearGlobal: indique le contexte global doit être vide ou non. si 1 on repart vide sinon 0 le contexte 
+global courant est toujours d'actualité.
+
+
+
+
+champ Data Type longueur minimal de 1 octet pas de maxi même si il ne dépassera pas 2 octets un jour.
+---------------
+-------------------------------------
+|   7 	| 6 | 5 | 4 | 3 | 2 | 1 | 0 | 
+-------------------------------------
+| More  |          IdPart           |
+-------------------------------------
+IdPart: partie de l'identifiant Data Type (petit boutisme)
+More: octet supplémentaire pour avoir l'identifiant Data Type complet.
+      si inférieur ou égale à 127 alors un octet avec le bit More à 0 est suffisant 127=0111 1111.
+      sinon en position 1et un octet supplémentaire contenant les bits 7 à 13 du Data Type et More=0
+      est nécessaire et suit l'octet courant et ainsi de suite si non suffisant: 0000 0000 10000 0000.
+
+
+Principe de codage/decodage
+---------------------------
+Pour une données de température nous prenons le data type TempDegC (0x02)
+correspond à une température en degrés Celsius codée sur un entier non signé 16bits avec une résolution de 0.1°C sur une plage de -273,1 à 1364,1°C avec une valeur -273,2°C indique une erreur.
+Taille Data Type: 1 octet
+Taille des données: 2 octets (uint16_t LSB)
+température valeur/10-273,2
+valeur octet_0 | ( (octet_1 & 0x3F) << 8)
+AlarmL/AlarmH (0,1)
+
+--------------------------------------------------------
+| Octet 0    |        Octet 1                          |
+--------------------------------------------------------
+|  7-0 	     | 7      | 6      | 5 | 4 | 3 | 2 | 1 | 0 | 
+--------------------------------------------------------
+|  ValueLSB  | AlarmH | AlarmL | ValueMSB              |
+--------------------------------------------------------
+
+valeur:20.54 °C
+
+Node:
+degc = (degc - OFFSET) * 10.0 = (20.54 - (-273.2)) * 10.0 = 2937.4 #arrondie 0.1 près pour 0.01*100
+valeur codé sur 16bits non signé (65535 ou FFFF ou 1111 1111 1111 1111)
+value.uint16 = (((uint16_t)(degc + 0.5)) & 0x3FFF) | (((uint16_t)flags) << 14) #arrondie à +0.5
+             = 2937.4 + 0.5 = 2937.4+0.5
+	     = 2937 = 0b(0000 1011 0111 1001)
+
+   3    F    F    F
+  0011 1111 1111 1111   (16263 maxi sinon on déborde)
+& 0000 1011 0111 1001
+----------------------
+  0000 1011 0111 1001
+les flags sont à partir du 14 bit c'est à dire l'octet 2
+  0000 1011 0111 1001 
+--------------------------------------------------------
+| Octet 0    		|        Octet 1               |
+--------------------------------------------------------
+|  7 6 5 4 3 2 1 0 	| 7 | 6 | 5 | 4 | 3 | 2 | 1 |0 | 
+--------------------------------------------------------
+|  0000 1011 0111 1001  | 0 | 0 | 00 0000 0000 0000    |
+--------------------------------------------------------
+Trame définitive du payload
+---------------------------
+----------------------------------------------------------------------------------------
+|   1 octet	|   1 octet	 | 1 octets    | 2 octets           | N octets    | N octets | ...
+----------------------------------------------------------------------------------------
+|Format/version	| Data Channel n | Data Type X | données            | Data Type Y | données  |
+----------------------------------------------------------------------------------------
+| 0xC1          | channel 1      | idpart: 0x02|0000 1011 0111 1001 |
+-------------------------------------------------------------------------------------------
+Décodage de sur le serveur
+--------------------------
+-------------------------------------------------------------------------------------------
+				script python
+-------------------------------------------------------------------------------------------
+DATA_TYPE_NAME = "TempDegC"
+DATA_TYPE_ID   = 0x02
+
+VALUE_OFFSET = -273.2
+
+
+def decode_payload(payload, channel, res, global_values):
+    value   =  payload[0] | ((payload[1] & 0x3F) << 8)
+    alarm_l = (payload[1] & 0x40) != 0
+    alarm_h = (payload[1] & 0x80) != 0
+    payload =  payload[2:]
+    
+    value                     = (value / 10.0) + VALUE_OFFSET
+    value                     = round(value, 1) 
+    res['temperature']        = value
+    res['temperature-unit']   = '°C'
+    res['temperature-alarmH'] = alarm_h
+    res['temperature-alarmL'] = alarm_l
+    
+    return payload
+--------------------------------------------------------------------------------------------
+                          ** Alarm sur les 2 derniers bits  
+>valeur qui arrive 2937:  0000 1011 0111 1001 binaire Alarm MSB et LSB bit de poids faible:
+Payload[0] 0111 1001   octet0
+Payload[1] 0000 1011   octet1
+
+Payload[0] 0111 1001 | ((Payload[1] 0000 1011 &0x3F )<<8)  // <<8 lecture debut octet1 avec un & 0011 11111
+
+payload[0]  0111 1001
+payload[1]  0000 1011
+           &0011 1111
+          -----------
+            0000 1011  <<8 lecture du reste de la température sans les alarmes.
+  0000 1011 0111 1001
+(2937/10) + (-273.2) = 293.7 - 273.2 = 20,5 °C
+----------------------------------------------*********************------------------------------------------------
+!!!!!!Nombre négatif ça fonctionne aussi!!!!
+Température -4: 
+Complément à 2 de -4 c’est 00000100 => inverse 11111011 +1= 11111100
+degc = (degc - OFFSET) * 10.0 = (-4 - (-273.2)) * 10.0 = (-4 + 273.2)*10 = 2692  #arrondie 0.1 près pour 0.01*100 	
+       2692+0.5 = 2692.5  -> ob 1010 1000 0100 , 1000 //arrondi à 0.5
+
+value.uint16 = (((uint16_t)(degc + 0.5)) & 0x3FFF) | (((uint16_t)flags) << 14) #arrondie à +0.5
+  
+      3     F   F     F
+     0011 1111 1111 1111  &0x3FFF
+&    0000 1010 1000 0100  degc
+     0000 1010 1000 0100
+|    0000 0000 0000 0000    << flag 14   si nous avons des alarms dans les deux derniers bits
+     0000 1010 1000 0100 valeur qu'on envoie dans la trame payload
+     **
+Décodage python
+---------------
+Payload[0] 1000 0100 octet0  
+Payload[1] 0000 1010 octet1                                                 					
+
+Payload[0] 1000 0100| ((Payload[1] 0000 1010 &0x3F )<<8)  // <<8 lecture debut octet1 avec un & 0011 11111
+
+  0000 1010 
+& 0011 1111
+------------
+  0000 1010
+<< 8
+-----------
+  0000 1010 0000 0000 
+| 0000 0000 1000 0100
+-----------------------
+  0000 1010 1000 0100 ======  0000 1010 1000 0100=  (2692/10) + (-273.2)= -4
+
+
+****************************************************************************************************************
+Pour une valeur de tension Batterie le data type BattVoltageMV (0x01)
+------------------------------------------------------------------
+Est la tension batterie, en millivolts. Codée avec un entier non signé de 16 bits.
+Peut exprimer une tension batterie comprise entre 0 V et 65,536 V, au millivolt près.
+Taille DataType: 1 octet  et Taille des données: 2 octets (uint16_t LSB)
+OU
+Pour une valeur de tension Batterie le data type BattVoltageFlagsMV (0x0F)
+------------------------------------------------------------------
+Est la tension batterie, en multiples de 10 millivolts, avec des indications d’état.
+Peut exprimer une tension batterie comprise entre 0 V et 40,96 V, avec un pas de 10 mV.
+Codée avec un entier non signé de 16 bits de la façon suivante :
+Est la tension batterie, en multiples de 10 millivolts, avec des indications d’état.
+Peut exprimer une tension batterie comprise entre 0 V et 40,96 V, avec un pas de 10 mV.
+Codée avec un entier non signé de 16 bits de la façon suivante :
+Octets
+7 6 5 4 3 2 1 0 |   7	    6         5     |   4     | 3  2  1  0
+   ValueLSB     | Réservé Réservé   Réservé | LowBatt |  ValueMSB
+
+Où :
+•	La valeur vaut : Octet_0 | ((octet_1 & 0x0F) << 8)
+•	LowBatt est positionné à 1 si la tension batterie est tombée en dessous de son seuil de niveau bas.
+•	Les bits 5 à 7 du second octet sont réservés pour de futurs usages.
+La tension batterie vaut : valeur x 10 mV.
+DataTypeId :	0x0F
+Portée globale :	Oui, si présent dans le flux du Data Channel 0
+Taille Data Type :	1 octet
+Taille des données :	2 octets (uint16_t LSB)
+----------------------------------------------------------------------------
+Decodage 0x01
+DATA_TYPE_NAME = "BattVoltageMV"
+DATA_TYPE_ID   = 0x01
+
+
+def decode_payload(payload, channel, res, global_values):
+    value   = payload[0] | (payload[1] << 8)
+    payload = payload[2:]
+    
+    if channel is 0:
+        global_values['node-battery-voltage']      = round(value / 1000.0, 3)
+        global_values['node-battery-voltage-unit'] = 'V'
+    else:
+        res['battery-voltage']      = round(value / 1000.0, 3)
+        res['battery-voltage-unit'] = 'V'
+    
+    return payload
+-------------------------------------------------------------------------
+Decodage 0x0f
+DATA_TYPE_NAME = "BattVoltageFlagsMV"
+DATA_TYPE_ID   = 0x0F
+
+
+def decode_payload(payload, channel, res, global_values):
+    value    = payload[0] | (payload[1] << 8)
+    payload  = payload[2:]
+    
+    low_batt = (value & 0x1000) != 0 
+    value    =  value & 0x0FFF
+    
+    if channel is 0:
+        global_values['node-batteryVoltage']            = round(value / 100.0, 2)
+        global_values['node-batteryVoltage-unit']       = 'V'
+        global_values['node-batteryVoltage-alarmIsLow'] = low_batt
+    else:
+        res['batteryVoltage']            = round(value / 100.0, 2)
+        res['batteryVoltage-unit']       = 'V'
+        res['batteryVoltage-alarmIsLow'] = low_batt
+    
+    return payload
+-------------------------------------------------------------------------------------
+from struct import Struct
+
+DATA_TYPE_NAME = "VoltageV"
+DATA_TYPE_ID   = 0x0c
+
+depacker       = Struct('<h')
+
+def decode_payload(payload, channel, res, global_values):
+    #value   = depacker.unpack(payload[0:2])
+    #soucis il faut ajouter du crochet [0] sinon cela reste un tuple
+    #et pas un int, du coup il ne pouvait pas faire de multiplication   
+    
+    value   = depacker.unpack(payload[0:2]) [0]
+    payload = payload[2:]
+    
+    res['voltage']      = round(value * 0.01, 2)
+    res['voltage-unit'] = 'V'
+    
+    return payload
+-------------------------------------------------------------------------------------
+Exemple pour 15.35V * 1000 pour le (uint16) 15340 : 0011 1011 1110 1100
+Payload[0]  1110 1100
+Payload[1]  0011 1011
+---------------------
+            0011 1011 1110 1100
+
+Struct.unpack(payload[0 :2]) = value   [0 :2] à partir la liste indice 0 je prends 2 valeurs [1,9,7,7,5,3] ->[1,9]
+Payload[2 :] unit =                    [2 :0] j’affiche tout ce qui est après l’indice 2       [1,9,7,7,5,3] ->[7,7,5,3]
+Struct interprète les octets comme des données binaires compressées
+Ce module effectue des conversions entre les valeurs Python et les structures C représentées sous forme d' bytes objets Python. depacker.doc
+Récap :0b 0011 0001 0011 0000 = 12 592 
+
+***********************************************************************************************************************
+**************************Décodage du driver d'une trame uart 8 tensions***********************************************
+***********************************************************************************************************************
+--------------------------------Envoyer les données depuis un raspberry vers le noeud communicant----------------------
+Envoyer la données uart depuis un raspberry vers le node lora pour le traitement et encodage:
+emetteur_encode.py   							Python3
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+# Test du port série
+import serial
+message = "2022-03-25 14:09:40,100.1,200.2,300.3,-100.1,-200.2,-300.3,50.4,-50.8,13.22\r\n"
+ser = serial.Serial("/dev/ttyAMA0" , baudrate=9600,  timeout=10.0)
+print("Port serie :  " + ser.name)
+ser.write(message.encode())
+ser.close()
+
+----------------------------------Data Type----------------------------------------------------------------------------
+Datatype
+volt avec un entier signé 32bits
+Taille datat type: 1 octet et taille des donénes: 4 octets (int32_t)
+
+36	octets : T1 (int32_t LSB), T2 (int32_t LSB), T3 (int32_t LSB), T4 (int32_t LSB), T5 (int32_t LSB), T6 (int32_t LSB), T7 (int32_t LSB), T8 (int32_t LSB), TBatt (int32_t LSB), 
+----------------------------------Décodage sur le serveur--------------------------------------------------------------
+from struct import Struct
+
+DATA_TYPE_NAME = "VoltvvList"
+DATA_TYPE_ID   = 0x32
+
+depacker       = Struct('<iiiiiiiii')
+
+
+def decode_payload(payload, 
+                   channel, 
+                   res, 
+                   frame_global_values, 
+                   channel_global_values):
+    t1, t2, t3, t4, t5, t6, t7, t8, tBatt = depacker.unpack(payload[0:36])
+    payload = payload[36:]
+    
+    res['tension-ps1'] = round(t1 * 0.01, 2)
+    res['tension-ps2'] = round(t2 * 0.01, 2)
+    res['tension-ps3'] = round(t3 * 0.01, 2)
+    res['tension-ps4'] = round(t4 * 0.01, 2)
+    res['tension-ps5'] = round(t5 * 0.01, 2)
+    res['tension-ps6'] = round(t6 * 0.01, 2)
+    res['tension-ps7'] = round(t7 * 0.01, 2)
+    res['tension-ps8'] = round(t8 * 0.01, 2)
+    res['tension-Batt'] = round(tBatt * 0.01, 2)
+    res['tension-unit']  = 'V'
+   
+    return payload
+
+******************************************FIN SUR LA COMPREHENSION DU PROTOCOLE****************************************
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

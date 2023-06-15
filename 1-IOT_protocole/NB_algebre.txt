@@ -1,0 +1,210 @@
+*****************************************
+********ALGEBRE DE BOOL******************
+*****************************************
+
+Binaire nombre négatif
+Un nombre peut s’exprimer en octet (le bit le plus fort fait le signe [0+, 1-])
+Une variable sur 1 octet peut contenir -128 à +127 s’il autorise les négatifs 
+                     pour le non signé de 0 à 255
+Le nombre négatif d’un binaire 
+-------------------------------
+(inverse les bits de ce nombre, on ajoute 1 car il n’y a qu’un seul zéro
+cela évite d’avoir un 0 positif et un zéro négatif pour le cas +0 différent de -0) 
+c’est pour ça qu’on peut aller de -128 et non -127
+116 = b0111 0100 et son négatif est (inverser non négatif + 1) = 
+	1000 1011
+      +         1
+      = 1000 1100   (cela s'appelle le complément à deux)
+
+Binaire nombre à virgule
+La première méthode est la virgule fixe pour les microcontrôleurs comme 0110,1001 mais sur 0110,1000 on perd 3 bits inutilement.
+La deuxième méthode virgule flottante  signe * mantisse * base (exposant). 
+La position de la virgule est fixée dans la mantisse et on la fait flotter en faisant varier l’exposant. 
+IEEE 754 fixe le format
+9,750 = b100111 la notion de virgule 1001,11 peut s’écrire 1001,11*2exp0 ou 0,100111*2exp(4)
+Terme 100111 Mantisse et 100 Exposant donc 100111 100 correspond à 1001,11 (b100=4) N=100111*2exp4=1001,11
+----------------------Conversion------------------------
+B2->B10 :  110,1011 qui est 110= 2.2 2.1 2.0 ,  1011= 2.-1  2.-2  2.-3  2.-4 = 5,
+b110=6 et b1011= 2.-1+2.-3+2.-4=0.5+0.125+0.0625=0,6875  = 6,6875
+B10->B2 : entière ok  décimale : 0.6875 en binaire (multiplié par 2 et noté la partie entière successivement)
+	2*0,6875 = 1,375
+	2*0,375=0,75
+	2*0.75 = 1,5
+	0,5*2=1              =>partie entière : 1011 et donc 0,6875 = b0,1011
+
+Virgule fixe : nombre de chiffre après la virgule est fixe
+Virgule flottante : nombre de chiffre significatifs est fixe
+
+2.-1=0.5=1/2     2.-2=0.25   2.-3=0.125   2.-4=0.0625
+0.5+0.125=0.625
+6.625=b110,101
+----------------------------------------------------------------------------------------------
+>> << && ||  opération sur les bits
+1101 << 8   = 1101 0000 0000
+
+
+
+
+*********************************************************************************************
+---------------------------------------------------------------------------------------------
+----------------------ALGEBRE DE BOOL--------------------------------------------------------
+---------------------------------------------------------------------------------------------
+Ce qui nous amène au type de variable:
+ _______________________________________________________________________________
+|Type			| mem (Bits)    |  valeur 				|
+|================================================================================
+|bit			| 1	    	|  0   to  1				|	
+|--------------------------------------------------------------------------------
+|signed char		| 8 		| -128 to 127				|
+|--------------------------------------------------------------------------------
+|unsigned char		| 8 		| 0    to 255				|
+|--------------------------------------------------------------------------------
+|int			| 16 		| -32768 to 32767			|	
+|--------------------------------------------------------------------------------
+|unsigned int		| 16		| 0    to 63535      			|
+|--------------------------------------------------------------------------------
+|short	int		| 16 		| -32768  to 32767   			|
+|--------------------------------------------------------------------------------
+|long int		| 32		| -2.147.483.648 to  2.147.483.647 	|	
+|--------------------------------------------------------------------------------
+|unsigned long	int	| 32 		| 0  to  4.294.967.295			|		
+|--------------------------------------------------------------------------------
+|float			| 32		| -1.175e-38 to 3.402e38		|	
+|--------------------------------------------------------------------------------
+|double			| 32		| -1.175e-38 to 3.402e38		|			
+|---------------------------------------------------------------------------------------------------------
+|boolean(true/false)	| 1 octet c'est la valeur minimale à stocker 00000001bits (le reste sont remplis)|		
+|---------------------------------------------------------------------------------------------------------
+*******************************
+décalage logique <<, >> shift
+*******************************
+-----------------------------
+pour ce type de décalage certains bits vont être perdus le résulat sera tronqué ou arrondi.
+décalage logique droite
+     01011110 ->
+>>1= 001011110
+un décalage à droite de n rangs équivaux à une division par 2 puissance n
+pour les entiers positifs mais pas pour les non-signé qui n'a pas grand sens mathématiquement.
+
+décalage logique gauche
+   <- 01011110
+<<1= 010111100
+un décalage à gauche de n rangs équivaux à une multiplication par 2 puissance n
+pour les non-signés ou entier positif.
+
+décalage arithmétique
+---------------------
+similaire au précédent à un détail près:
+Celui de droite, le bit de signe n'est pas modifié et on remplit les vides
+par le décalage avec un bit de signe.
+
+décalage logique droite
+     11011110
+>>1= 111011110   (celuis de droite est perdu et bit de signe 1)
+
+
+décalage logique gauche
+     100111100
+<<1= 10111100
+
+Ces instructions équivalentes à une multiplication/division par 2 puissance n
+que le nombre soit signé ou non avec un arrondi positifs et négatifs avec une
+manière différente (9/2=4 et (-9)/2=5)
+
+décalage Rotation
+-----------------
+Similaire mais les bits sortant sont réinjécté à la place libéré par le décalage.
+Utile en cryptographie et algorithme de chiffrement ou si on doit manipuler des 
+données bit par bit comme un calcul du nombre de bit à 1 dans le nombre.
+
+ 
+Mais dans le code ?
+En JAVA il n'y a pas de distinction de décalage logique ou arithmétique, ils ont
+le même effet donc droite (>>> logique) (>> arithmétique).
+En C++ le type est déterminé par le type d'entier à décaler. Les entier signés décalage
+arithmétique tandis que la logique est utilisée sur les entiers non signés.
+décalages:
+        100101                 ob101101
+<<3 = ob100101000        >>2 = ob001101
+           ******                  ****
+
+************************
+Opérations bits à bits
+************************
+
+Conjonctions & ET logique
+-------------------------
+ ob1010    [0&0=0]  [0&1=0]  [1&1=1]
+&ob1100
+---------
+ ob1000 
+
+Disjonction | OU
+----------------
+ ob1010    [0|0=0]  [0|1=1]  [1|1=1]
+|ob1100
+---------
+ ob1110 
+
+Xor ^
+-----
+ ob1010    [0^0=0]  [0^1=1]  [1^1=0]
+^ob1100
+---------
+ ob0110 
+
+
+Négations NOT ~
+------------
+~(0b1010) = ob0101 
+
+les masques
+-----------
+avec & ou |
+& ~(0xFF) on récupère les 0 ou mise à 0 des bits
+
+| ~(0xFF) on récupère les 1 ou mise à 1 des bits
+
+Addition des bits
+-----------------
+0+0=0  0+1=1  1+0=1 1+1=10 (retenue)
+
+Complement à 2
+--------------
+ 00101100
+ 11010011  (complement à 1)
++       1
+----------
+ 11010100  (complement à 2)
+
+
+--------------------------------------------------------------------------------------
+Actions sur les registres comment ? :    opération (<< >>  & |) (décalage, ET, OU)
+------------------------------------
+init   		 b7   b6  b5  b4  b3  b2  b1  b0
+       		 0    0   0   0   0   0   0   0
+1<<4   		 0    0   0   1   0   0   0   0
+1<<0		 0    0   0   0   0   0   0   1
+Masque(ou)---------------------------------------         
+(1<<0) | (1<<4)  0    0   0   1   0   0   0   1
+Masque inverse-----------------------------------
+NOT ou ~
+(1<<0) | (1<<4)  1    1   1   0   1   1   1   0
+Masque &-----------------------------------------
+		 0    0   0   0   0   0   0   0
+& ~(0xFF) =      0    0   0   0   0   0   0   0 
+
+
+
+
+
+
+GPIOA->CRH = GPIOA->CRH & ~(0xF << 8); // Mise à 0 des bits    	 b11 b10 b9 b8   
+GPIOA->CRH = GPIOA->CRH | (0x01 << 8); // Mise à 1 du bit b8   	 0   1   0  0 
+           						       & 0   0   0  0
+           						       = 0   0   0  0
+           						       | 0   0   0  1                                         
+           						       = 0   0   0  1
+----------------------------------------------------------------------------------------------------------
+
+

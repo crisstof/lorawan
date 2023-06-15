@@ -1,0 +1,9 @@
+Accès exterieur à une machine dans kvm
+
+iptables -I FORWARD -o virbt0 -p -d 192.168.122.150 --dport 80 -j ACCEPT
+iptables -t nat -I PREROUTING -p tcp -d 192.168.8.100 --dport 8080 -j DNAT --to 192.168.122.150:80
+
+depuis le navigateur: http://192.168.8.100:8080
+192.168.122.150 serveur ngnix
+192.168.8.100   PC de la VM
+
